@@ -1,3 +1,4 @@
+# --- Provider ---
 provider "aws" {
   region = var.region
 }
@@ -7,94 +8,92 @@ resource "aws_iam_role" "ecs_task_execution_role" {
   name = "ecs_task_execution_role"
 
   assume_role_policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Action    = "sts:AssumeRole"
-        Effect    = "Allow"
+        Effect = "Allow",
         Principal = {
           Service = "ecs-tasks.amazonaws.com"
-        }
-      },
+        },
+        Action = "sts:AssumeRole"
+      }
     ]
   })
 }
 
-# --- IAM Role Policy for ECS Task Execution ---
 resource "aws_iam_role_policy" "ecs_task_execution_policy" {
-  name   = "ecs_task_execution_policy"
-  role   = aws_iam_role.ecs_task_execution_role.id
+  name = "ecs_task_execution_policy"
+  role = aws_iam_role.ecs_task_execution_role.id
+
   policy = jsonencode({
-    Version = "2012-10-17"
+    Version = "2012-10-17",
     Statement = [
       {
-        Action   = ["ecr:GetAuthorizationToken", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"]
-        Effect   = "Allow"
+        Effect = "Allow",
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchGetImage",
+          "ecr:GetDownloadUrlForLayer",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
         Resource = "*"
-      },
-      {
-        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-        Effect   = "Allow"
-        Resource = "*"
-      },
-      # Attach the AmazonECSTaskExecutionRolePolicy
-      {
-        Action   = ["ecs:StartTask", "ecs:StopTask", "ecs:UpdateService"]
-        Effect   = "Allow"
-        Resource = "*"
-      },
+      }
     ]
   })
 }
 
-# --- Networking ---
+# --- Networking (VPC, Subnets, IGW, Route Table) ---
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
 }
 
 resource "aws_subnet" "public1" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-east-1a"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "${var.region}a"
+  map_public_ip_on_launch = true
 }
 
 resource "aws_subnet" "public2" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-east-1b"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "${var.region}b"
+  map_public_ip_on_launch = true
 }
 
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 }
 
-# --- Route Table to Route Internet Traffic to the IGW ---
-resource "aws_route_table" "main_route_table" {
+resource "aws_route_table" "main" {
   vpc_id = aws_vpc.main.id
 }
 
 resource "aws_route" "default_route" {
-  route_table_id         = aws_route_table.main_route_table.id
+  route_table_id         = aws_route_table.main.id
   destination_cidr_block = "0.0.0.0/0"
   gateway_id             = aws_internet_gateway.igw.id
 }
 
-resource "aws_route_table_association" "main_route_table_association_1" {
+resource "aws_route_table_association" "public1" {
   subnet_id      = aws_subnet.public1.id
-  route_table_id = aws_route_table.main_route_table.id
+  route_table_id = aws_route_table.main.id
 }
 
-resource "aws_route_table_association" "main_route_table_association_2" {
+resource "aws_route_table_association" "public2" {
   subnet_id      = aws_subnet.public2.id
-  route_table_id = aws_route_table.main_route_table.id
+  route_table_id = aws_route_table.main.id
 }
 
-# --- Security ---
-resource "aws_security_group" "strapi_sg" {
-  name   = "strapi-sg"
-  vpc_id = aws_vpc.main.id
+# --- Security Group for ALB ---
+resource "aws_security_group" "alb_sg" {
+  name        = "alb-sg"
+  description = "Allow inbound HTTP/HTTPS traffic"
+  vpc_id      = aws_vpc.main.id
 
   ingress {
+    description = "Allow HTTP traffic"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
@@ -102,13 +101,37 @@ resource "aws_security_group" "strapi_sg" {
   }
 
   ingress {
-    from_port   = 1337
-    to_port     = 1337
+    description = "Allow HTTPS traffic"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# --- Security Group for ECS Task ---
+resource "aws_security_group" "strapi_sg" {
+  name   = "strapi-sg"
+  vpc_id = aws_vpc.main.id
+
+  ingress {
+    description      = "Allow Strapi Port from ALB"
+    from_port        = 1337
+    to_port          = 1337
+    protocol         = "tcp"
+    security_groups  = [aws_security_group.alb_sg.id]
+  }
+
+  egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -121,7 +144,7 @@ resource "aws_ecs_cluster" "strapi_cluster" {
   name = "strapi-cluster"
 }
 
-# --- Logging ---
+# --- CloudWatch Log Group ---
 resource "aws_cloudwatch_log_group" "strapi_logs" {
   name              = "/ecs/strapi"
   retention_in_days = 7
@@ -132,29 +155,39 @@ resource "aws_ecs_task_definition" "strapi_task" {
   family                   = "strapi-task"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
-  cpu                      = "512"
-  memory                   = "1024"
-
-  task_role_arn            = aws_iam_role.ecs_task_execution_role.arn  # ECS Task Execution Role
-  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn  # ECS Task Execution Role
+  cpu                      = "1024"
+  memory                   = "2048"
+  execution_role_arn       = aws_iam_role.ecs_task_execution_role.arn
 
   container_definitions = jsonencode([
     {
       name      = "strapi"
       image     = var.strapi_image
+      essential = true
       portMappings = [
         {
           containerPort = var.strapi_container_port
+          protocol      = "tcp"
         }
       ]
       logConfiguration = {
-        logDriver = "awslogs"
+        logDriver = "awslogs",
         options = {
-          awslogs-group         = aws_cloudwatch_log_group.strapi_logs.name
-          awslogs-region        = var.region
-          awslogs-stream-prefix = "ecs/strapi"
+          awslogs-group         = aws_cloudwatch_log_group.strapi_logs.name,
+          awslogs-region        = var.region,
+          awslogs-stream-prefix = "ecs"
         }
       }
+      environment = [
+        {
+          name  = "APP_KEYS"
+          value = "superSecretKey1,superSecretKey2"
+        },
+        {
+          name  = "NODE_ENV"
+          value = "production"
+        }
+      ]
     }
   ])
 }
@@ -165,13 +198,14 @@ resource "aws_lb" "strapi_alb" {
   internal           = false
   load_balancer_type = "application"
   subnets            = [aws_subnet.public1.id, aws_subnet.public2.id]
+  security_groups    = [aws_security_group.alb_sg.id]
 }
 
 resource "aws_lb_target_group" "strapi_tg" {
-  name     = "strapi-tg"
-  port     = 1337
-  protocol = "HTTP"
-  vpc_id   = aws_vpc.main.id
+  name        = "strapi-tg"
+  port        = 1337
+  protocol    = "HTTP"
+  vpc_id      = aws_vpc.main.id
   target_type = "ip"
 
   health_check {
@@ -180,6 +214,7 @@ resource "aws_lb_target_group" "strapi_tg" {
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
+    matcher             = "200-399"
   }
 }
 
@@ -199,19 +234,32 @@ resource "aws_ecs_service" "strapi_service" {
   name            = "strapi-service"
   cluster         = aws_ecs_cluster.strapi_cluster.id
   task_definition = aws_ecs_task_definition.strapi_task.arn
-  launch_type     = "FARGATE"
   desired_count   = 1
 
+  capacity_provider_strategy {
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 1
+  }
+
   network_configuration {
-    subnets         = [aws_subnet.public1.id, aws_subnet.public2.id]
-    security_groups = [aws_security_group.strapi_sg.id]
+    subnets          = [aws_subnet.public1.id, aws_subnet.public2.id]
+    security_groups  = [aws_security_group.strapi_sg.id]
     assign_public_ip = true
   }
 
-  depends_on = [aws_lb_target_group.strapi_tg]
+  load_balancer {
+    target_group_arn = aws_lb_target_group.strapi_tg.arn
+    container_name   = "strapi"
+    container_port   = var.strapi_container_port
+  }
+
+  health_check_grace_period_seconds = 60
+
+  depends_on = [aws_lb_listener.strapi_listener]
 }
 
-# --- CloudWatch Alarms ---
+
+# --- Monitoring (CloudWatch Alarms + Dashboard) ---
 resource "aws_cloudwatch_metric_alarm" "high_cpu" {
   alarm_name          = "strapi-high-cpu"
   comparison_operator = "GreaterThanThreshold"
@@ -244,27 +292,26 @@ resource "aws_cloudwatch_metric_alarm" "high_memory" {
   }
 }
 
-# --- CloudWatch Dashboard (Optional) ---
 resource "aws_cloudwatch_dashboard" "strapi_dashboard" {
   dashboard_name = "StrapiDashboard"
 
   dashboard_body = jsonencode({
     widgets = [
       {
-        type = "metric"
-        x = 0
-        y = 0
-        width = 12
-        height = 6
+        type = "metric",
+        x    = 0,
+        y    = 0,
+        width = 12,
+        height = 6,
         properties = {
           metrics = [
-            [ "AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.strapi_cluster.name, "ServiceName", aws_ecs_service.strapi_service.name ],
-            [ ".", "MemoryUtilization", ".", ".", ".", "." ]
-          ]
-          period = 60
-          stat = "Average"
-          region = var.region
-          title = "ECS CPU and Memory Utilization"
+            ["AWS/ECS", "CPUUtilization", "ClusterName", aws_ecs_cluster.strapi_cluster.name, "ServiceName", aws_ecs_service.strapi_service.name],
+            ["AWS/ECS", "MemoryUtilization", "ClusterName", aws_ecs_cluster.strapi_cluster.name, "ServiceName", aws_ecs_service.strapi_service.name]
+          ],
+          period = 60,
+          stat   = "Average",
+          region = var.region,
+          title  = "ECS CPU and Memory Utilization"
         }
       }
     ]

@@ -1,23 +1,19 @@
+# --- Variables ---
+
 variable "region" {
-  description = "AWS region to deploy resources"
+  description = "AWS region where resources will be deployed."
   type        = string
   default     = "us-east-1"
 }
 
-variable "key_name" {
-  description = "Name of the existing EC2 key pair to use"
-  type        = string
-  default     = "key"
-}
-
 variable "strapi_image" {
-  description = "The URI of the Docker image to use for Strapi (e.g., from ECR)"
+  description = "Docker image URI for the Strapi container."
   type        = string
-  default = "331405041655.dkr.ecr.us-east-1.amazonaws.com/strapi-repo"
+  default     = "331405041655.dkr.ecr.us-east-1.amazonaws.com/strapi-repo:latest"
 }
 
 variable "strapi_container_port" {
-  description = "Port on which the Strapi container listens"
+  description = "Port on which the Strapi container will listen."
   type        = number
   default     = 1337
 }
