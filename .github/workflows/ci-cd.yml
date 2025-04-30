@@ -47,9 +47,9 @@ jobs:
       run: terraform -chdir=terraform init
 
     - name: Plan Terraform
+      id: plan_step
       run: terraform -chdir=terraform plan -out=tfplan
       continue-on-error: true
-      id: plan_step
 
     - name: Handle Terraform Plan Fail
       if: steps.plan_step.outcome == 'failure'
@@ -59,7 +59,16 @@ jobs:
         exit 1
 
     - name: Apply Terraform
+      id: apply_step
       run: terraform -chdir=terraform apply -auto-approve tfplan
+      continue-on-error: true
+
+    - name: Handle Terraform Apply Fail
+      if: steps.apply_step.outcome == 'failure'
+      run: |
+        echo "Terraform apply failed. Destroying any created resources..."
+        terraform -chdir=terraform destroy -auto-approve || true
+        exit 1
 
     - name: Get ALB DNS from Terraform
       id: get_dns
@@ -67,6 +76,9 @@ jobs:
         STRAPI_URL=$(terraform -chdir=terraform output -raw strapi_url)
         echo "STRAPI_URL=$STRAPI_URL" >> $GITHUB_ENV
         echo "Strapi URL: $STRAPI_URL"
+
+    - name: Show Output
+      run: terraform -chdir=terraform output strapi_url
 
     - name: Schedule Destroy in 5 Minutes
       run: |
