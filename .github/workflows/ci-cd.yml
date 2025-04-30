@@ -3,7 +3,7 @@ name: Full CI/CD Pipeline with Auto-Terraform Destroy
 on:
   push:
     branches:
-      - main 
+      - main
 
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
@@ -65,12 +65,15 @@ jobs:
       id: get_dns
       run: |
         DNS=$(terraform -chdir=terraform output -raw alb_dns)
-        echo "ALB_DNS=$DNS" >> $GITHUB_ENV
-        echo "Strapi URL: http://$DNS"
+        STRAPI_URL="http://$DNS"
+        echo "STRAPI_URL=$STRAPI_URL" >> $GITHUB_ENV
+        echo "Strapi URL: $STRAPI_URL"
 
     - name: Schedule Destroy in 5 Minutes
       run: |
-        echo "Scheduling Terraform destroy in 5 minutes..."
-        echo 'terraform -chdir=terraform destroy -auto-approve' > destroy.sh
-        chmod +x destroy.sh
-        nohup bash -c "sleep 300 && ./destroy.sh" &
+          echo "Scheduling Terraform destroy in 5 minutes..."
+          echo 'terraform -chdir=terraform destroy -auto-approve' > destroy.sh
+          chmod +x destroy.sh
+          sleep 300  # Wait for 5 minutes
+          ./destroy.sh  # Run the destroy command directly after 5 minutes
+      
