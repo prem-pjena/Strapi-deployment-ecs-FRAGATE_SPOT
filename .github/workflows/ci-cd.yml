@@ -8,6 +8,7 @@ on:
 env:
   AWS_REGION: ${{ secrets.AWS_REGION }}
   ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  JWT_SECRET: ${{ secrets.JWT_SECRET }}  # Inject JWT_SECRET here
 
 jobs:
   deploy:
@@ -36,7 +37,7 @@ jobs:
         IMAGE_URI="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest"
         
         docker buildx create --use
-        docker buildx build --platform linux/amd64 -t $IMAGE_URI . --push
+        docker buildx build --platform linux/amd64 -t $IMAGE_URI . --build-arg JWT_SECRET=${{ secrets.JWT_SECRET }} --push
 
         echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
 
