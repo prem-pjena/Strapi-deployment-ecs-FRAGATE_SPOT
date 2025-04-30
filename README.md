@@ -1,106 +1,94 @@
+# 🚀 Strapi CI/CD Deployment with Terraform on AWS
 
-# Strapi ECS Deployment with CloudWatch Monitoring
+This project demonstrates a complete CI/CD pipeline using **GitHub Actions**, **Terraform**, and **Amazon ECS with Fargate** to deploy a Strapi backend. The pipeline includes:
+- Docker image build and push to **Amazon ECR**
+- Infrastructure provisioning via **Terraform**
+- Deployment on **AWS ECS with Application Load Balancer**
+- Auto-destroy infrastructure after 5 minutes for cost saving
 
-This repository contains the infrastructure and CI/CD pipeline for deploying a Strapi application on AWS using ECS Fargate, managed entirely via Terraform. It also includes CloudWatch for monitoring (logs and metrics) of the Strapi application.
+---
 
-## Features:
-- **ECS Fargate Deployment:** The Strapi app is deployed on AWS ECS Fargate.
-- **Terraform Infrastructure Management:** All resources (ECS, IAM roles, CloudWatch, etc.) are managed using Terraform.
-- **CI/CD with GitHub Actions:** Automated deployment pipeline with GitHub Actions.
-- **CloudWatch Logs & Metrics:** Integrated CloudWatch for logging and monitoring ECS tasks.
+## 🧰 Tech Stack
 
-## Prerequisites:
-1. **AWS Account:** Make sure you have an AWS account and appropriate IAM roles.
-2. **GitHub Secrets:**
-   - `AWS_ACCESS_KEY_ID`
-   - `AWS_SECRET_ACCESS_KEY`
-   - `AWS_REGION`
-   - `ECR_URI` (Your ECR URI, e.g., `aws_account_id.dkr.ecr.region.amazonaws.com/repository_name`)
-   - `ECS_CLUSTER_NAME`
-   - `ECS_SERVICE_NAME`
-   
-3. **Terraform Installed:** Install Terraform on your local machine if you plan to test locally.
-4. **Docker Installed:** For building and pushing the Docker image to Amazon ECR.
+- **Strapi** (Backend)
+- **Docker**
+- **Terraform**
+- **AWS ECS (Fargate)**
+- **Amazon ECR**
+- **Application Load Balancer**
+- **GitHub Actions**
 
-## Setup Instructions:
+---
 
-### Step 1: Clone the Repository
+## 📂 Project Structure
 
-```bash
-git clone https://github.com/prem-pjena/strapi-ecs-deploy-cloudwatch.git
-cd strapi-ecs-deploy-cloudwatch
-```
+. ├── .github/workflows │ └── main.yml # GitHub Actions CI/CD pipeline ├── terraform/ │ ├── main.tf # Terraform ECS, ALB, ECR config │ ├── variables.tf │ ├── outputs.tf │ └── ... ├── Dockerfile # Dockerfile for Strapi app ├── README.md └── ...
 
-### Step 2: Configure AWS Credentials
 
-Ensure you have your AWS credentials set up locally, or use GitHub Secrets if running the CI/CD pipeline. Your `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `AWS_REGION` should be configured.
+---
 
-### Step 3: Set Up Terraform
+## 🔧 How It Works
 
-1. Install Terraform if you don't have it already installed.
-2. Navigate to the `terraform/` directory.
+1. **Push to `main` branch** triggers the CI/CD pipeline.
+2. **Docker Image** is built and pushed to **ECR**.
+3. **Terraform** provisions ECS + ALB and deploys the container.
+4. **Output** includes the public Strapi URL.
+5. After **5 minutes**, resources are **automatically destroyed**.
 
-```bash
-cd terraform
-```
+---
 
-3. Initialize Terraform:
+## 📌 Prerequisites
 
-```bash
-terraform init
-```
+- AWS Account with access keys
+- ECR repository created
+- GitHub Secrets configured:
+  - `AWS_ACCESS_KEY_ID`
+  - `AWS_SECRET_ACCESS_KEY`
+  - `AWS_REGION`
+  - `ECR_REPOSITORY`
 
-4. Review the plan and apply it:
+---
 
-```bash
-terraform plan
-terraform apply -auto-approve
-```
+## 📄 GitHub Secrets Example
 
-This will provision the necessary infrastructure including ECS Fargate, CloudWatch Logs, IAM roles, and more.
+Add these in your GitHub repo settings:
 
-### Step 4: Dockerize Strapi
+| Secret Name           | Description                    |
+|-----------------------|--------------------------------|
+| `AWS_ACCESS_KEY_ID`   | Your AWS access key            |
+| `AWS_SECRET_ACCESS_KEY` | Your AWS secret access key  |
+| `AWS_REGION`          | e.g. `us-east-1`               |
+| `ECR_REPOSITORY`      | Name of your ECR repo          |
 
-The Dockerfile in the root of this repository will help you build the Strapi app image. Build and push the image to Amazon ECR:
+---
 
-1. Log in to Amazon ECR:
+## 🌐 Strapi Access URL
 
-```bash
-aws ecr get-login-password --region your-region | docker login --username AWS --password-stdin your-ecr-uri
-```
+Once deployed, check the **GitHub Actions Logs** for:
 
-2. Build and push the Docker image:
+Strapi URL: http://<your-alb-dns>.elb.amazonaws.com
 
-```bash
-docker build -t your-ecr-uri:latest .
-docker push your-ecr-uri:latest
-```
 
-### Step 5: Trigger CI/CD with GitHub Actions
+You can visit this URL directly in your browser.
 
-After pushing to the `main` branch, the GitHub Actions workflow will automatically:
-1. Initialize Terraform
-2. Plan and apply changes to the infrastructure
-3. Build and push the Docker image to ECR
-4. Force ECS to perform a new deployment
+---
 
-### Step 6: Monitoring with CloudWatch
+## ⚠️ Auto Destroy
 
-CloudWatch will be used to monitor the following:
-- **Logs:** Application logs from the Strapi service.
-- **Metrics:** CPU, memory utilization, network in/out.
-- **Alarms/Dashboards (Optional):** You can optionally set up CloudWatch alarms to monitor high CPU or memory usage, ECS task health, and more.
+To avoid charges, the infrastructure is **auto-destroyed after 5 minutes** using a delayed background command in the GitHub Actions runner.
 
-### Step 7: Access the Strapi Application
+---
 
-Once the ECS service is up and running, you can access the Strapi application via the load balancer URL or public IP. Use the URL provided in the AWS console to interact with the Strapi admin interface.
 
-## Troubleshooting:
+## 📬 Contact
 
-- Ensure that all required GitHub Secrets are set up correctly.
-- If Terraform fails, check for any existing resources with the same name (ECS, IAM roles, etc.).
-- Check CloudWatch logs for any runtime issues in the Strapi app.
+Made by [Prem Prakash Jena](https://github.com/prem-pjena)  
+Email: premprakashjena04@gmail.com  
+LinkedIn: [premprakashj](https://linkedin.com/in/premprakashj/)
 
-## License
+---
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## 📝 License
+
+MIT License
+
